@@ -1,3 +1,6 @@
+"""Small shared helpers used across the workflow."""
+
+
 def build_ndf_record(title: str) -> dict:
     """
     Build a standard fallback record for movies that could not be found.
@@ -6,6 +9,8 @@ def build_ndf_record(title: str) -> dict:
     This keeps the database output structurally consistent even when a movie
     cannot be matched or scraped successfully.
     """
+    # Keep the database schema fully populated so downstream reporting stays
+    # predictable even when Rotten Tomatoes does not return a usable match.
     return {
         "title": title,
         "year": -1,

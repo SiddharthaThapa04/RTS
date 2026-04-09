@@ -1,10 +1,15 @@
+"""Browser-level navigation helpers for Rotten Tomatoes."""
+
 from robocorp import browser
 
 from app.config import CONTINUE_BUTTON_SELECTOR
 
 
 class RottenTomatoesBrowser:
+    """Keeps browser navigation and reset logic in one place."""
+
     def open_home(self) -> None:
+        # Keep the landing page interaction explicit so page state starts clean.
         browser.goto("https://www.rottentomatoes.com/")
 
     def accept_cookies(self) -> None:
@@ -17,6 +22,7 @@ class RottenTomatoesBrowser:
         try:
             page.click(CONTINUE_BUTTON_SELECTOR, timeout=5000)
         except Exception:
+            # The banner is optional; missing it is a normal state, not an error.
             pass
 
     def go_back_to_home(self) -> None:

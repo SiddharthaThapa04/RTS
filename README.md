@@ -34,11 +34,19 @@ Movies that cannot be matched or scraped are stored with `NDF` (No Data Found) p
 
 ```
 .
-├── tasks.py          # Main robot entry point
-├── movies.xlsx       # Input workbook (see Input Format below)
-├── robot.yaml        # Robocorp task definition
-├── conda.yaml        # Environment & dependency spec
-└── movies.db         # SQLite output (created on first run)
+├── tasks.py              # Main robot entry point
+├── app/                  # Implementation package
+│   ├── browser_helpers.py
+│   ├── config.py
+│   ├── database.py
+│   ├── mailer.py
+│   ├── scraper.py
+│   ├── utils.py
+│   └── workflow.py
+├── movies.xlsx           # Input workbook (see Input Format below)
+├── robot.yaml            # Robocorp task definition
+├── conda.yaml            # Environment & dependency spec
+└── movies.db             # SQLite output (created on first run)
 ```
 
 ---
@@ -59,7 +67,7 @@ One movie title per row. Titles are matched case-insensitively against Rotten To
 
 ## Configuration
 
-Before running, open `tasks.py` and update the three email constants near the top of the file:
+Before running, open [`app/config.py`](./app/config.py) and update the three email constants near the top of the file:
 
 ```python
 SENDER_EMAIL    = "your-gmail-address@gmail.com"
@@ -129,7 +137,7 @@ Where `SENTIMENT` is one of `POSITIVE`, `NEGATIVE`, or `UNKNOWN`.
 
 ### Email Report
 
-Once all movies are processed, a single email is sent to `RECEIVER_EMAIL` containing the full `movies` table rendered as an HTML table. Subject line: **RT Movie Scrape Results**.
+Once all movies are processed, a single email is sent to `RECEIVER_EMAIL` containing the full `movies` table rendered as an HTML table. The subject line includes the total number of synchronized movies.
 
 ---
 
@@ -145,7 +153,7 @@ Once all movies are processed, a single email is sent to `RECEIVER_EMAIL` contai
 ## Troubleshooting
 
 **`[ERROR] Search page did not load`**
-Rotten Tomatoes may be rate-limiting requests. Increase the `slowmo` value in `tasks.py`:
+Rotten Tomatoes may be rate-limiting requests. Increase the `slowmo` value in [`app/workflow.py`](./app/workflow.py):
 
 ```python
 browser.configure(slowmo=300)  # milliseconds between actions

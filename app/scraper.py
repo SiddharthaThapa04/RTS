@@ -1,3 +1,5 @@
+"""Page-level scraping logic for Rotten Tomatoes movie detail pages."""
+
 from app.config import (
     AUDIENCE_SCORE_SELECTOR,
     CRITICS_SCORE_SELECTOR,
@@ -13,6 +15,8 @@ from app.config import (
 
 
 class MoviePageScraper:
+    """Extracts structured movie data from an open Rotten Tomatoes page."""
+
     def scrape(self, page, title: str, year: int) -> dict | None:
         """
         Scrape all required movie data from the currently open Rotten Tomatoes page.
@@ -76,6 +80,7 @@ class MoviePageScraper:
 
             for card in cards[:6]:
                 try:
+                    # Build a compact, source-attributed review summary.
                     name = card.locator(REVIEW_NAME_SELECTOR).inner_text().strip()
                     publication = card.locator(REVIEW_PUBLICATION_SELECTOR).inner_text().strip()
                     review_text = card.locator(REVIEW_CONTENT_SELECTOR).inner_text().strip()
@@ -95,13 +100,20 @@ class MoviePageScraper:
 
             return results
 
+        # Core scoring data from the hero scorecard.
         tomatometer = safe_text(CRITICS_SCORE_SELECTOR)
         audience_score = safe_text(AUDIENCE_SCORE_SELECTOR)
+
+        # Short-form narrative content for reporting output.
         storyline = safe_text(DESCRIPTION_SELECTOR)
+
+        # Structured metadata from the movie details section.
         genre = get_item_by_label("Genre")
         runtime = get_item_by_label("Runtime")
         rating = get_item_by_label("Rating")
         release_date = get_item_by_label("Release Date (Theaters)")
+
+        # Review cards are optional; the robot pads the schema when they are absent.
         critics = scrape_critics()
 
         data = {

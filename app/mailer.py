@@ -1,5 +1,8 @@
+"""Email report generation for the final scrape output."""
+
 import smtplib
 import sqlite3
+from textwrap import dedent
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -8,6 +11,8 @@ from app.config import DB_PATH, RECEIVER_EMAIL, SENDER_EMAIL, SENDER_PASSWORD
 
 
 class ReportMailer:
+    """Builds and sends the final HTML report email."""
+
     def __init__(
         self,
         db_path: str = DB_PATH,
@@ -36,7 +41,7 @@ class ReportMailer:
             return
 
         def make_score_pill(label, score_val):
-            """Creates a stable, rounded badge using nested tables."""
+            """Render a small status pill that works reliably in email clients."""
             if not score_val or score_val == "NDF" or score_val == "N/A":
                 bg, text, border = "#f1f5f9", "#94a3b8", "#e2e8f0"
             else:
@@ -49,29 +54,35 @@ class ReportMailer:
                 except ValueError:
                     bg, text, border = "#f1f5f9", "#94a3b8", "#e2e8f0"
 
-            return f"""
-            <table cellpadding="0" cellspacing="0" border="0" style="margin: 4px auto;">
-                <tr>
-                    <td style="background-color: {bg}; border: 1px solid {border}; border-radius: 12px; padding: 4px 10px; line-height: 1;">
-                        <span style="color: {text}; font-size: 11px; font-weight: bold; font-family: sans-serif; white-space: nowrap;">
-                            {label} {score_val}
-                        </span>
-                    </td>
-                </tr>
-            </table>"""
+            return dedent(
+                f"""
+                <table cellpadding="0" cellspacing="0" border="0" style="margin: 4px auto;">
+                    <tr>
+                        <td style="background-color: {bg}; border: 1px solid {border}; border-radius: 12px; padding: 4px 10px; line-height: 1;">
+                            <span style="color: {text}; font-size: 11px; font-weight: bold; font-family: sans-serif; white-space: nowrap;">
+                                {label} {score_val}
+                            </span>
+                        </td>
+                    </tr>
+                </table>
+                """
+            ).strip()
 
         body_rows = ""
         for row in rows:
             data = dict(zip(columns, row))
 
+            # Break the rating into a compact primary label and a lighter note.
             raw_rating = str(data.get("rating") or "N/A")
             rating_parts = raw_rating.split("(", 1)
             main_rating = rating_parts[0].strip()
             sub_rating = f"({rating_parts[1]}" if len(rating_parts) > 1 else ""
 
+            # Scores are shown as pills to make scanability better in email clients.
             toma_pill = make_score_pill("🍅", data.get("tomatometer"))
             aud_pill = make_score_pill("🎟️", data.get("audience_score"))
 
+            # Truncate the synopsis so the report remains readable at a glance.
             storyline = data.get("storyline", "")
             storyline = storyline[:160] + "..." if storyline and len(storyline) > 160 else storyline
 
@@ -108,62 +119,64 @@ class ReportMailer:
             </tr>
             """
 
-        html = f"""
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="UTF-8"></head>
-        <body style="margin:0; padding:0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="padding: 40px 10px;">
-                <tr>
-                    <td align="center">
-                        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 1000px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+        html = dedent(
+            f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"></head>
+            <body style="margin:0; padding:0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="padding: 40px 10px;">
+                    <tr>
+                        <td align="center">
+                            <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 1000px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
 
-                            <tr>
-                                <td style="background-color: #0f172a; padding: 35px 40px; text-align: left;">
-                                    <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
-                                        <span style="color: #ef4444;">RT</span> MOVIE INTELLIGENCE
-                                    </h1>
-                                    <p style="margin: 8px 0 0; color: #94a3b8; font-size: 13px; letter-spacing: 0.5px;">
-                                        {len(rows)} TITLES PROCESSED &nbsp; | &nbsp; DATABASE SYNC COMPLETE
-                                    </p>
-                                </td>
-                            </tr>
+                                <tr>
+                                    <td style="background-color: #0f172a; padding: 35px 40px; text-align: left;">
+                                        <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+                                            <span style="color: #ef4444;">RT</span> MOVIE INTELLIGENCE
+                                        </h1>
+                                        <p style="margin: 8px 0 0; color: #94a3b8; font-size: 13px; letter-spacing: 0.5px;">
+                                            {len(rows)} TITLES PROCESSED &nbsp; | &nbsp; DATABASE SYNC COMPLETE
+                                        </p>
+                                    </td>
+                                </tr>
 
-                            <tr>
-                                <td style="padding: 0;">
-                                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
-                                        <thead>
-                                            <tr style="background-color: #f8fafc; border-bottom: 2px solid #f1f5f9;">
-                                                <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Movie Title</th>
-                                                <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Rating</th>
-                                                <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Release</th>
-                                                <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Scores</th>
-                                                <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Storyline</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {body_rows}
-                                        </tbody>
-                                    </table>
-                                </td>
-                            </tr>
+                                <tr>
+                                    <td style="padding: 0;">
+                                        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+                                            <thead>
+                                                <tr style="background-color: #f8fafc; border-bottom: 2px solid #f1f5f9;">
+                                                    <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Movie Title</th>
+                                                    <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Rating</th>
+                                                    <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Release</th>
+                                                    <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Scores</th>
+                                                    <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Storyline</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {body_rows}
+                                            </tbody>
+                                        </table>
+                                    </td>
+                                </tr>
 
-                            <tr>
-                                <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f1f5f9;">
-                                    <p style="margin: 0; color: #cbd5e1; font-size: 11px; letter-spacing: 1px;">
-                                        AUTOMATED REPORT • GENERATED BY RT-SCRAPER-BOT
-                                        <br>
-                                        This report scans for 'Movie' only, TV Series are not included in final report.
-                                    </p>
-                                </td>
-                            </tr>
-                        </table>
-                    </td>
-                </tr>
-            </table>
-        </body>
-        </html>
-        """
+                                <tr>
+                                    <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f1f5f9;">
+                                        <p style="margin: 0; color: #cbd5e1; font-size: 11px; letter-spacing: 1px;">
+                                            AUTOMATED REPORT • GENERATED BY RT-SCRAPER-BOT
+                                            <br>
+                                            This report scans for 'Movie' only, TV Series are not included in final report.
+                                        </p>
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                </table>
+            </body>
+            </html>
+            """
+        ).strip()
 
         msg = MIMEMultipart("alternative")
         msg["Subject"] = f"🎬 RT Report: {len(rows)} Movies Synchronized"
@@ -172,6 +185,7 @@ class ReportMailer:
         msg.attach(MIMEText(html, "html"))
 
         try:
+            # SMTP over SSL keeps the transport simple and avoids separate STARTTLS handling.
             with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
                 server.login(self.sender_email, self.sender_password)
                 server.sendmail(self.sender_email, self.receiver_email, msg.as_string())

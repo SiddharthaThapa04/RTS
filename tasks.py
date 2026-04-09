@@ -1,3 +1,5 @@
+"""Robocorp entrypoint for the Rotten Tomatoes scraping workflow."""
+
 from robocorp.tasks import task
 
 from app.browser_helpers import RottenTomatoesBrowser
@@ -9,7 +11,7 @@ from app.workflow import MovieSearchWorkflow
 
 @task
 def rts():
-    """Robocorp task entry point."""
+    """Create the workflow dependencies and execute the full robot."""
     workflow = MovieSearchWorkflow(
         database=MovieDatabase(),
         browser_helper=RottenTomatoesBrowser(),

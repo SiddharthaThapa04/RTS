@@ -1,3 +1,5 @@
+"""End-to-end orchestration for searching, scraping, and reporting."""
+
 from robocorp import browser
 from RPA.Excel.Files import Files
 
@@ -18,6 +20,8 @@ from app.utils import build_ndf_record
 
 
 class MovieSearchWorkflow:
+    """Coordinates the full robot lifecycle across all supporting modules."""
+
     def __init__(
         self,
         database: MovieDatabase,
@@ -47,17 +51,20 @@ class MovieSearchWorkflow:
 
         print(f"\n[SEARCHING] {name}")
 
+        # Start each lookup from the same stable interaction point.
         search_input = page.locator(SEARCH_INPUT_SELECTOR)
         search_input.wait_for(state="visible", timeout=5000)
         search_input.click()
         search_input.fill("")
         search_input.type(name, delay=50)
 
+        # Suggestions are optional; the search still works if they do not appear.
         try:
             page.wait_for_selector(SEARCH_RESULTS_SUGGESTION_SELECTOR, timeout=3000)
         except Exception:
             pass
 
+        # Submit the query and wait for the Rotten Tomatoes results page.
         page.keyboard.press("Enter")
 
         try:
@@ -68,6 +75,7 @@ class MovieSearchWorkflow:
             self.browser_helper.go_back_to_home()
             return
 
+        # If there are no movie results at all, persist the fallback record.
         try:
             page.wait_for_selector(MOVIE_ONLY_FILTER, timeout=5000)
         except Exception:
@@ -76,6 +84,7 @@ class MovieSearchWorkflow:
             self.browser_helper.go_back_to_home()
             return
 
+        # Try to scope results to movies only when the UI exposes the filter.
         try:
             movies_tab = page.locator(MOVIES_TAB_SELECTOR, has_text=MOVIES_TAB_TEXT).first
             movies_tab.scroll_into_view_if_needed(timeout=3000)
@@ -100,6 +109,7 @@ class MovieSearchWorkflow:
         page = browser.page()
         target_name = mov_name["Movies"].strip().lower()
 
+        # Ensure the search results are still present before iterating them.
         try:
             page.wait_for_selector(MOVIE_ONLY_FILTER, timeout=7000)
         except Exception:
@@ -113,6 +123,7 @@ class MovieSearchWorkflow:
             self.database.save_movie(build_ndf_record(mov_name["Movies"].strip()))
             return
 
+        # Prefer exact title matches, then choose the most recent release year.
         best_match_el = None
         latest_year = -1
         matched_year = -1
@@ -145,6 +156,7 @@ class MovieSearchWorkflow:
         print(f"[FOUND] '{mov_name['Movies']}' ({matched_year}) — opening...")
         best_match_el.click()
 
+        # The details page can be slightly asynchronous, so wait for stabilization.
         try:
             page.wait_for_load_state("load", timeout=15000)
         except Exception:
@@ -173,6 +185,7 @@ class MovieSearchWorkflow:
         worksheet = excel.read_worksheet_as_table("data", header=True)
         excel.close_workbook()
 
+        # Process rows sequentially so a single bad record does not stop the run.
         for row in worksheet:
             try:
                 self.process_movie(row)
