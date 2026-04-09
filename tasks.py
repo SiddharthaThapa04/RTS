@@ -1,11 +1,14 @@
 import smtplib
+
+import sqlite3
+import os
+
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from robocorp.tasks import task
 from robocorp import browser
+
 from RPA.Excel.Files import Files
-import sqlite3
-import os
 
 
 # Absolute path for the local SQLite database file.
@@ -16,10 +19,10 @@ DB_PATH = os.path.join(os.getcwd(), "movies.db")
 # ─── Email config ─────────────────────────────────────────────────────────────
 # SMTP sender and recipient configuration used for the final HTML report email.
 # Replace these placeholder values with valid credentials before execution.
+
 SENDER_EMAIL = "your-sender-email"         # Gmail account used to send the report
 SENDER_PASSWORD = "your-sender-password-(NOT LOGIN PASSWORD)"       # Gmail App Password for SMTP authentication
 RECEIVER_EMAIL = "your-receiver-email"       # Destination email for the scrape report
-
 
 # ─── Database ────────────────────────────────────────────────────────────────
 
@@ -112,60 +115,168 @@ def _ndf_record(title: str) -> dict:
         "critic_6": "NDF",
     }
 
+# ─── Mail Sender ─────────────────────────────────────────────────────────
 
 def send_movie_report():
     """
-    Read all stored movie records from the database and email them as an HTML table.
-
-    This function:
-    - fetches every row from `movies.db`
-    - converts the result set into a simple HTML table
-    - sends the final report through Gmail SMTP over SSL
+    Generates a high-fidelity, dashboard-style HTML movie report 
+    with rock-solid UI alignment for email clients.
     """
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM movies")
+        rows = cursor.fetchall()
+        columns = [desc[0] for desc in cursor.description]
+        conn.close()
+    except Exception as e:
+        print(f"Database Error: {e}")
+        return
 
-    cursor.execute("SELECT * FROM movies")
-    rows = cursor.fetchall()
-    columns = [desc[0] for desc in cursor.description]
+    # ── Helper: Pill Generator (The "Secret Sauce" for Email UI) ─────────────
+    def make_score_pill(label, score_val):
+        """Creates a stable, rounded badge using nested tables."""
+        if not score_val or score_val == "NDF" or score_val == "N/A":
+            bg, text, border = "#f1f5f9", "#94a3b8", "#e2e8f0"
+        else:
+            try:
+                score = int(str(score_val).replace("%", ""))
+                if score >= 60:
+                    bg, text, border = "#f0fdf4", "#16a34a", "#bbf7d0"
+                else:
+                    bg, text, border = "#fef2f2", "#dc2626", "#fecaca"
+            except ValueError:
+                bg, text, border = "#f1f5f9", "#94a3b8", "#e2e8f0"
+        
+        return f"""
+        <table cellpadding="0" cellspacing="0" border="0" style="margin: 4px auto;">
+            <tr>
+                <td style="background-color: {bg}; border: 1px solid {border}; border-radius: 12px; padding: 4px 10px; line-height: 1;">
+                    <span style="color: {text}; font-size: 11px; font-weight: bold; font-family: sans-serif; white-space: nowrap;">
+                        {label} {score_val}
+                    </span>
+                </td>
+            </tr>
+        </table>"""
 
-    conn.close()
-
-    # Build the table header row dynamically from the database column names.
-    header_cells = "".join(f"<th>{col}</th>" for col in columns)
-
-    # Build the table body by converting each database row into HTML table cells.
-    # Null values are rendered as empty strings to keep the report readable.
+    # ── Table Rows Generation ──────────────────────────────────────────────────
     body_rows = ""
     for row in rows:
-        cells = "".join(f"<td>{val if val is not None else ''}</td>" for val in row)
-        body_rows += f"<tr>{cells}</tr>"
+        data = dict(zip(columns, row))
+        
+        # Format Rating (Split main rating from long descriptions)
+        raw_rating = str(data.get('rating') or 'N/A')
+        rating_parts = raw_rating.split('(', 1)
+        main_rating = rating_parts[0].strip()
+        sub_rating = f"({rating_parts[1]}" if len(rating_parts) > 1 else ""
 
-    # Construct the final HTML email body.
+        # Generate Pills
+        toma_pill = make_score_pill("🍅", data.get('tomatometer'))
+        aud_pill = make_score_pill("🎟️", data.get('audience_score'))
+
+        body_rows += f"""
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 20px 15px; vertical-align: top; width: 220px;">
+                <div style="font-weight: 700; color: #1e293b; font-size: 15px; margin-bottom: 2px;">{data.get('title')}</div>
+                <div style="color: #94a3b8; font-size: 12px;">Year: {data.get('year')}</div>
+            </td>
+
+            <td style="padding: 20px 10px; vertical-align: middle; text-align: center; width: 140px;">
+                <table cellpadding="0" cellspacing="0" border="0" style="margin: 0 auto;">
+                    <tr>
+                        <td style="border: 1.5px solid #475569; border-radius: 4px; padding: 3px 6px;">
+                            <span style="color: #475569; font-size: 11px; font-weight: 800; font-family: sans-serif;">{main_rating}</span>
+                        </td>
+                    </tr>
+                </table>
+                <div style="color: #94a3b8; font-size: 10px; margin-top: 6px; line-height: 1.2; font-style: italic;">{sub_rating}</div>
+            </td>
+
+            <td style="padding: 20px 10px; vertical-align: middle; text-align: center; width: 120px;">
+                <div style="color: #475569; font-size: 12px; font-weight: 600; font-family: sans-serif;">{data.get('release_date') or '---'}</div>
+            </td>
+
+            <td style="padding: 10px; vertical-align: middle; text-align: center; width: 120px;">
+                {toma_pill}
+                {aud_pill}
+            </td>
+
+            <td style="padding: 20px 15px; color: #64748b; font-size: 13px; line-height: 1.5; vertical-align: top;">
+                {data.get('storyline', '')[:160] + '...' if data.get('storyline') and len(data.get('storyline')) > 160 else data.get('storyline')}
+            </td>
+        </tr>
+        """
+
+    # ── Full HTML Email Template ──────────────────────────────────────────────
     html = f"""
-    <html><body>
-    <h2>Rotten Tomatoes Scrape Report</h2>
-    <table border="1" cellpadding="6" cellspacing="0">
-        <thead><tr>{header_cells}</tr></thead>
-        <tbody>{body_rows}</tbody>
-    </table>
-    </body></html>
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8"></head>
+    <body style="margin:0; padding:0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+        <table width="100%" border="0" cellspacing="0" cellpadding="0" style="padding: 40px 10px;">
+            <tr>
+                <td align="center">
+                    <table width="100%" border="0" cellspacing="0" cellpadding="0" style="max-width: 1000px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                        
+                        <tr>
+                            <td style="background-color: #0f172a; padding: 35px 40px; text-align: left;">
+                                <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: -0.5px;">
+                                    <span style="color: #ef4444;">RT</span> MOVIE INTELLIGENCE
+                                </h1>
+                                <p style="margin: 8px 0 0; color: #94a3b8; font-size: 13px; letter-spacing: 0.5px;">
+                                    {len(rows)} TITLES PROCESSED &nbsp; | &nbsp; DATABASE SYNC COMPLETE
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 0;">
+                                <table width="100%" border="0" cellspacing="0" cellpadding="0" style="border-collapse: collapse;">
+                                    <thead>
+                                        <tr style="background-color: #f8fafc; border-bottom: 2px solid #f1f5f9;">
+                                            <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Movie Title</th>
+                                            <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Rating</th>
+                                            <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Release</th>
+                                            <th style="text-align: center; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Scores</th>
+                                            <th style="text-align: left; padding: 16px; color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Storyline</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {body_rows}
+                                    </tbody>
+                                </table>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td style="padding: 30px; background-color: #f8fafc; text-align: center; border-top: 1px solid #f1f5f9;">
+                                <p style="margin: 0; color: #cbd5e1; font-size: 11px; letter-spacing: 1px;">
+                                    AUTOMATED REPORT • GENERATED BY RT-SCRAPER-BOT
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
     """
 
-    # Create a multipart email so the message can be extended later if needed.
+    # ── Email Sending Logic ───────────────────────────────────────────────────
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = "RT Movie Scrape Results"
+    msg["Subject"] = f"🎬 RT Report: {len(rows)} Movies Synchronized"
     msg["From"] = SENDER_EMAIL
     msg["To"] = RECEIVER_EMAIL
     msg.attach(MIMEText(html, "html"))
 
-    # Connect securely to Gmail's SMTP server and send the report.
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(SENDER_EMAIL, SENDER_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
-
-    print(f"[EMAIL] Report sent to {RECEIVER_EMAIL}")
-
+    try:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(SENDER_EMAIL, SENDER_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
+        print(f"✨ Success! The premium report has been sent to {RECEIVER_EMAIL}")
+    except Exception as e:
+        print(f"❌ SMTP Error: {e}")
 
 # ─── Browser helpers ─────────────────────────────────────────────────────────
 
