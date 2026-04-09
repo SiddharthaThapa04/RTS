@@ -21,14 +21,33 @@ DB_PATH = os.path.join(os.getcwd(), "movies.db")
 # Replace these placeholder values with valid credentials before execution.
 
 
+
 SENDER_EMAIL = "your-sender-email"         # Gmail account used to send the report
 SENDER_PASSWORD = "your-sender-password-(NOT LOGIN PASSWORD)"       # Gmail App Password for SMTP authentication
 RECEIVER_EMAIL = "your-receiver-email"       # Destination email for the scrape report
 
 
+
 # ─── Inventory ────────────────────────────────────────────────────────────────
 
-movie_only_filter = '//search-page-result [@type="movie"]//search-page-media-row'
+MOVIE_ONLY_FILTER = '//search-page-result [@type="movie"]//search-page-media-row'
+SEARCH_INPUT_SELECTOR = "input[placeholder='Search']"
+SEARCH_RESULTS_SUGGESTION_SELECTOR = "ul[data-qa='search-results-list'], [class*='search-suggestion']"
+MOVIES_TAB_SELECTOR = "li"
+MOVIES_TAB_TEXT = "Movies"
+CONTINUE_BUTTON_SELECTOR = "button:text('Continue')"
+TITLE_SELECTOR = "a[slot='title']"
+MEDIA_SCORECARD_SELECTOR = "media-scorecard"
+CRITICS_SCORE_SELECTOR = "rt-text[slot='critics-score']"
+AUDIENCE_SCORE_SELECTOR = "rt-text[slot='audience-score']"
+DESCRIPTION_SELECTOR = "div[slot='description'] rt-text[slot='content']"
+REVIEW_CARD_SELECTOR = "review-card"
+REVIEW_NAME_SELECTOR = "rt-link[slot='name']"
+REVIEW_PUBLICATION_SELECTOR = "rt-link[slot='publication']"
+REVIEW_CONTENT_SELECTOR = "span[slot='content']"
+REVIEW_SENTIMENT_SELECTOR = "score-icon-critics"
+ITEM_WRAP_SELECTOR_TEMPLATE = "div[data-qa='item']:has(rt-text[data-qa='item-label']:text-is('{label}'))"
+ITEM_VALUE_SELECTOR = "[data-qa='item-value']"
 
 
 # ─── Database ────────────────────────────────────────────────────────────────
@@ -304,7 +323,7 @@ def accept_cookies():
     """
     page = browser.page()
     try:
-        page.click("button:text('Continue')", timeout=5000)
+        page.click(CONTINUE_BUTTON_SELECTOR, timeout=5000)
     except Exception:
         pass
 
@@ -345,7 +364,7 @@ def process_movie(mov_name):
 
     # Wait for the search box to become visible before interacting with it.
     # Clear any previous text and type the movie title gradually for stability.
-    search_input = page.locator("input[placeholder='Search']")
+    search_input = page.locator(SEARCH_INPUT_SELECTOR)
     search_input.wait_for(state="visible", timeout=5000)
     search_input.click()
     search_input.fill("")
@@ -355,7 +374,7 @@ def process_movie(mov_name):
     # The selector is intentionally flexible to handle minor UI differences.
     try:
         page.wait_for_selector(
-            "ul[data-qa='search-results-list'], [class*='search-suggestion']",
+            SEARCH_RESULTS_SUGGESTION_SELECTOR,
             timeout=3000
         )
     except Exception:
@@ -378,7 +397,7 @@ def process_movie(mov_name):
     # If no results exist, store an NDF placeholder record and continue.
     try:
         page.wait_for_selector(
-            movie_only_filter,
+            MOVIE_ONLY_FILTER,
             timeout=5000
         )
     except Exception:
@@ -391,7 +410,7 @@ def process_movie(mov_name):
     # Rotten Tomatoes may render this control inside a dynamic drawer, so force-click
     # is used to make interaction more reliable.
     try:
-        movies_tab = page.locator("li", has_text="Movies").first
+        movies_tab = page.locator(MOVIES_TAB_SELECTOR, has_text=MOVIES_TAB_TEXT).first
         movies_tab.scroll_into_view_if_needed(timeout=3000)
         movies_tab.click(force=True, timeout=5000)
         page.wait_for_load_state("load", timeout=5000)
@@ -423,7 +442,7 @@ def open_movie_details(mov_name):
     # Ensure the search result rows are present before trying to inspect them.
     try:
         page.wait_for_selector(
-            movie_only_filter,
+            MOVIE_ONLY_FILTER,
             timeout=7000
         )
     except Exception:
@@ -432,9 +451,7 @@ def open_movie_details(mov_name):
         return
 
     # Collect all result rows from the search results container.
-    results = page.locator(
-        movie_only_filter
-    ).all()
+    results = page.locator(MOVIE_ONLY_FILTER).all()
 
     if not results:
         print(f"[NOT FOUND] Result list is empty for: {mov_name['Movies']}")
@@ -448,7 +465,7 @@ def open_movie_details(mov_name):
 
     for result in results:
         try:
-            title_el = result.locator("a[slot='title']")
+            title_el = result.locator(TITLE_SELECTOR)
             title = title_el.inner_text().strip().lower()
         except Exception:
             # Skip malformed or partially rendered rows.
@@ -488,7 +505,7 @@ def open_movie_details(mov_name):
 
     # Wait for the movie scorecard to appear as confirmation that the details page loaded.
     try:
-        page.wait_for_selector("media-scorecard", timeout=8000)
+        page.wait_for_selector(MEDIA_SCORECARD_SELECTOR, timeout=8000)
     except Exception:
         print(f"[WARN] Scorecard not found for: {mov_name['Movies']}")
 
@@ -537,10 +554,10 @@ def scrape_movie_page(page, title: str, year: int) -> dict | None:
         """
         try:
             wrap = page.locator(
-                f"div[data-qa='item']:has(rt-text[data-qa='item-label']:text-is('{label}'))"
+                ITEM_WRAP_SELECTOR_TEMPLATE.format(label=label)
             )
             wrap.first.wait_for(state="attached", timeout=4000)
-            values = wrap.first.locator("[data-qa='item-value']").all()
+            values = wrap.first.locator(ITEM_VALUE_SELECTOR).all()
             texts = [v.inner_text().strip() for v in values if v.inner_text().strip()]
             return ", ".join(texts) if texts else None
         except Exception:
@@ -556,21 +573,21 @@ def scrape_movie_page(page, title: str, year: int) -> dict | None:
         If no review cards are found, returns a list of six None values.
         """
         try:
-            page.wait_for_selector("review-card", timeout=5000)
+            page.wait_for_selector(REVIEW_CARD_SELECTOR, timeout=5000)
         except Exception:
             return [None] * 6
 
-        cards = page.locator("review-card").all()
+        cards = page.locator(REVIEW_CARD_SELECTOR).all()
         results = []
 
         for card in cards[:6]:
             try:
-                name = card.locator("rt-link[slot='name']").inner_text().strip()
-                publication = card.locator("rt-link[slot='publication']").inner_text().strip()
-                review_text = card.locator("span[slot='content']").inner_text().strip()
+                name = card.locator(REVIEW_NAME_SELECTOR).inner_text().strip()
+                publication = card.locator(REVIEW_PUBLICATION_SELECTOR).inner_text().strip()
+                review_text = card.locator(REVIEW_CONTENT_SELECTOR).inner_text().strip()
 
                 try:
-                    sentiment = card.locator("score-icon-critics").get_attribute("sentiment") or "UNKNOWN"
+                    sentiment = card.locator(REVIEW_SENTIMENT_SELECTOR).get_attribute("sentiment") or "UNKNOWN"
                 except Exception:
                     sentiment = "UNKNOWN"
 
@@ -588,12 +605,12 @@ def scrape_movie_page(page, title: str, year: int) -> dict | None:
 
     # ── Scores ────────────────────────────────────────────────────────────────
     # Read critic and audience scores from the scorecard component.
-    tomatometer = safe_text("rt-text[slot='critics-score']")
-    audience_score = safe_text("rt-text[slot='audience-score']")
+    tomatometer = safe_text(CRITICS_SCORE_SELECTOR)
+    audience_score = safe_text(AUDIENCE_SCORE_SELECTOR)
 
     # ── Storyline ─────────────────────────────────────────────────────────────
     # Read the synopsis / storyline section.
-    storyline = safe_text("div[slot='description'] rt-text[slot='content']")
+    storyline = safe_text(DESCRIPTION_SELECTOR)
 
     # ── Info block ────────────────────────────────────────────────────────────
     # Extract structured metadata from the movie details section.
