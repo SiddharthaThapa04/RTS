@@ -15,3 +15,5 @@ temp/
 testrun/*
 .~lock*
 *.pkl
+movies.xlsx
+movies.db
